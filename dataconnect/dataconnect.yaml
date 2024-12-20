@@ -1,0 +1,12 @@
+specVersion: "v1beta"
+serviceId: "panda_repartidor"
+location: "us-central1"
+schema:
+  source: "./schema"
+  datasource:
+    postgresql:
+      database: "fdcdb"
+      cloudSql:
+        instanceId: "panda_repartidor-fdc"
+      # schemaValidation: "COMPATIBLE"
+connectorDirs: ["./connector"]
