@@ -15,7 +15,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Panda Delivery',
+      title: 'Panda Repartidor',
       theme: ThemeData(
         primaryColor: const Color(0xFF22A45D),
         colorScheme: ColorScheme.fromSeed(

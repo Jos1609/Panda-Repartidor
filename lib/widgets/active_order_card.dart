@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/order.dart';
 import '../utils/constants.dart';
+import '../services/order_service.dart';
 
 class ActiveOrderCard extends StatelessWidget {
   final DeliveryOrder order;
@@ -30,7 +31,7 @@ class ActiveOrderCard extends StatelessWidget {
       child: ExpansionTile(
         leading: _getStatusIcon(),
         title: Text(
-          order.restaurantName,
+          order.storeName ?? 'No especificada',
           style: const TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 16,
@@ -59,20 +60,26 @@ class ActiveOrderCard extends StatelessWidget {
               children: [
                 _buildInfoRow(
                   Icons.store,
-                  'Restaurante',
-                  order.restaurantAddress,
+                  'Recoger desde: ',
+                  order.storeAddress ?? 'Sin direccion',
                 ),
                 const SizedBox(height: 12),
                 _buildInfoRow(
                   Icons.person,
                   'Cliente',
-                  order.customerAddress,
+                  order.customerName,
                 ),
                 const SizedBox(height: 12),
                 _buildInfoRow(
                   Icons.phone,
                   'Teléfono',
                   order.customerPhone,
+                ),
+                const SizedBox(height: 12),
+                _buildInfoRow(
+                  Icons.location_on,
+                  'Direccion de entrega',
+                  order.customerAddress,
                 ),
                 if (order.notes != null) ...[
                   const SizedBox(height: 12),
@@ -125,27 +132,36 @@ class ActiveOrderCard extends StatelessWidget {
 
   Widget _buildActionButtons() {
     switch (order.status) {
-      case OrderStatus.pending:
+   case OrderStatus.pending:
+  return Row(
+    children: [
+      Expanded(
+        child: ElevatedButton(
+          onPressed: () async {
+            try {
+              await OrderService.instance.assignOrder(order.id);
+              await onStatusUpdate(OrderStatus.assigned);
+            } catch (e) {
+              print('Error: $e');
+            }
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppTheme.primaryColor,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+          child: const Text('Aceptar Pedido'),
+        ),
+      ),
+    ],
+  );
+      case OrderStatus.assigned:
         return Row(
           children: [
             Expanded(
               child: ElevatedButton(
-                onPressed: () => onStatusUpdate(OrderStatus.picked),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryColor,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                child: const Text('Recoger Pedido'),
-              ),
-            ),
-          ],
-        );
-      case OrderStatus.picked:
-        return Row(
-          children: [
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () => onStatusUpdate(OrderStatus.delivering),
+                onPressed: () async {
+                  await onStatusUpdate(OrderStatus.inProgress);
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryColor,
                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -155,12 +171,14 @@ class ActiveOrderCard extends StatelessWidget {
             ),
           ],
         );
-      case OrderStatus.delivering:
+      case OrderStatus.inProgress:
         return Row(
           children: [
             Expanded(
               child: ElevatedButton(
-                onPressed: () => onStatusUpdate(OrderStatus.completed),
+                onPressed: () async {
+                  await onStatusUpdate(OrderStatus.delivered);
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryColor,
                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -178,10 +196,10 @@ class ActiveOrderCard extends StatelessWidget {
   Widget _getStatusIcon() {
     final iconData = switch (order.status) {
       OrderStatus.pending => Icons.schedule,
-      OrderStatus.picked => Icons.store,
-      OrderStatus.delivering => Icons.directions_bike,
-      OrderStatus.completed => Icons.check_circle,
+      OrderStatus.inProgress => Icons.store,
       OrderStatus.cancelled => Icons.cancel,
+      OrderStatus.assigned => Icons.add_card_rounded,
+      OrderStatus.delivered => Icons.check,
     };
 
     return Icon(

@@ -25,6 +25,7 @@ class AuthService {
       return false;
     }
   }
+   String? get currentUserId => _auth.currentUser?.uid;
 
   // Iniciar sesión con email y contraseña
   Future<UserCredential> signInWithEmailAndPassword(

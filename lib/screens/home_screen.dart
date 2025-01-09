@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -20,8 +21,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final OrderService _orderService =
-      OrderService(driverId: 'current_driver_id');
+  late final OrderService _orderService;
   bool _isAvailable = true;
   GoogleMapController? _mapController;
   DeliveryStats? _stats;
@@ -30,12 +30,29 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+     final auth = FirebaseAuth.instance;
+    _orderService = OrderService(driverId: auth.currentUser!.uid);
     _loadStats();
   }
 
   Future<void> _loadStats() async {
-    final stats = await _orderService.getTodayStats();
-    setState(() => _stats = stats);
+    try {
+      final stats = await _orderService.getTodayStats();
+      if (mounted) {
+        setState(() {
+          _stats = stats;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al cargar estadísticas: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -80,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 value: _isAvailable,
                 onChanged: (value) async {
                   setState(() => _isAvailable = value);
-                  await _orderService.updateDriverStatus(value);
+                  await _orderService.assignOrder(value as String);
                 },
                 activeColor: AppTheme.primaryColor,
               ),
@@ -110,8 +127,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         // Botón para expandir/contraer mapa
                         Positioned(
-                          right: 16,
-                          bottom: 16,
+                          right: 26,
+                          bottom: 80,
                           child: FloatingActionButton.small(
                             onPressed: () => setState(
                                 () => _isMapExpanded = !_isMapExpanded),
@@ -185,9 +202,21 @@ class _HomeScreenState extends State<HomeScreen> {
               stream: _orderService.getActiveOrders(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
-                  return const SliverFillRemaining(
+                  return SliverFillRemaining(
                     child: Center(
-                      child: Text('No hay pedidos'),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.error_outline,
+                              size: 64, color: Colors.red[300]),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Error al cargar pedidos: ${snapshot.error}',
+                            style: TextStyle(color: Colors.grey[600]),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }
@@ -200,7 +229,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 }
 
-                final orders = snapshot.data ?? [];
+                final orders = snapshot.data !;
 
                 if (orders.isEmpty) {
                   return SliverFillRemaining(
@@ -215,10 +244,18 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            'No hay pedidos activos',
+                            'No hay pedidos disponibles',
                             style: TextStyle(
                               color: Colors.grey[600],
                               fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Las nuevas órdenes aparecerán aquí',
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 14,
                             ),
                           ),
                         ],
@@ -226,7 +263,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   );
                 }
-
                 return SliverPadding(
                   padding: const EdgeInsets.all(16),
                   sliver: SliverList(
@@ -236,10 +272,32 @@ class _HomeScreenState extends State<HomeScreen> {
                         return ActiveOrderCard(
                           order: order,
                           onStatusUpdate: (newStatus) async {
-                            await _orderService.updateOrderStatus(
-                              order.id,
-                              newStatus,
-                            );
+                            try {
+                              await _orderService.updateOrderStatus(
+                                order.id,
+                                newStatus, order.deliveryPersonId,
+                              );
+                              if (mounted) {
+                                // ignore: use_build_context_synchronously
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                        'Estado actualizado a: ${order.getStatusText()}'),
+                                    backgroundColor: Colors.blue[200],
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                // ignore: use_build_context_synchronously
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Error: $e'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
                           },
                         ).animate().fadeIn(
                               delay: Duration(milliseconds: 100 * index),
@@ -255,7 +313,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       // Menú inferior con accesos rápidos
-     bottomNavigationBar: const CustomBottomBar(),
+      bottomNavigationBar: const CustomBottomBar(),
     );
   }
 

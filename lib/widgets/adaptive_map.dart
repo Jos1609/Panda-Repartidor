@@ -1,26 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart' as google_maps;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:location/location.dart';
 import '../services/location_service.dart';
-import '../services/map_service.dart';
-import 'location_button.dart';
+import '../utils/constants.dart';
 
 class AdaptiveMap extends StatefulWidget {
   final double height;
-  final void Function(dynamic)? onMapCreated;
-  final bool myLocationEnabled;
-  final bool myLocationButtonEnabled;
 
   const AdaptiveMap({
     super.key,
-    required this.height,
-    this.onMapCreated,
-    this.myLocationEnabled = true,
-    this.myLocationButtonEnabled = true,
+    required this.height, required Function(dynamic controller) onMapCreated, required bool myLocationEnabled, required bool myLocationButtonEnabled,
   });
 
   @override
@@ -28,177 +20,141 @@ class AdaptiveMap extends StatefulWidget {
 }
 
 class _AdaptiveMapState extends State<AdaptiveMap> {
-  bool? _useGoogleMaps;
-  bool _isLoading = true;
-  bool _isTracking = false;
-  Position? _currentPosition;
   final LocationService _locationService = LocationService();
-  StreamSubscription<Position>? _positionStreamSubscription;
-  final _mapController = MapController();
-  google_maps.GoogleMapController? _googleMapController;
+  final MapController _mapController = MapController();
+  LocationData? _currentLocation;
+  StreamSubscription<LocationData>? _locationStream;
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _initializeMap();
+    _requestLocationPermission();
   }
 
-  Future<void> _initializeMap() async {
-    final hasGoogleServices = await MapService.hasGoogleServices();
-    setState(() {
-      _useGoogleMaps = hasGoogleServices;
-      _isLoading = false;
-    });
+  Future<void> _requestLocationPermission() async {
+    final hasPermission = await _locationService.requestPermission();
+    if (hasPermission) {
+      _getLocation();
+    }
   }
 
-  Future<void> _toggleLocationTracking() async {
-    if (_isTracking) {
-      // Detener seguimiento
-      _positionStreamSubscription?.cancel();
-      setState(() {
-        _isTracking = false;
-      });
-    } else {
-      // Iniciar seguimiento
-      final locationStream = await _locationService.startLocationUpdates();
-      if (locationStream != null) {
-        _positionStreamSubscription = locationStream.listen((position) {
-          setState(() {
-            _currentPosition = position;
-          });
-
-          // Actualizar la posición del mapa
-          if (_useGoogleMaps == true && _googleMapController != null) {
-            _googleMapController!.animateCamera(
-              google_maps.CameraUpdate.newLatLng(
-                google_maps.LatLng(
-                  position.latitude,
-                  position.longitude,
-                ),
-              ),
-            );
-          } else {
-            _mapController.move(
-              LatLng(position.latitude, position.longitude),
-              _mapController.camera.zoom,
-            );
-          }
-        });
+  Future<void> _getLocation() async {
+    setState(() => _isLoading = true);
+    
+    try {
+      final location = await _locationService.getCurrentLocation();
+      
+      if (mounted && location != null) {
         setState(() {
-          _isTracking = true;
+          _currentLocation = location;
+          _isLoading = false;
         });
-      } else {
-        // Mostrar error si no se pueden obtener permisos
+        
+        // Mover el mapa a la ubicación actual
+        _mapController.move(
+          LatLng(location.latitude!, location.longitude!),
+          _mapController.camera.zoom,
+        );
+        
+        _startLocationUpdates();
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _startLocationUpdates() {
+    _locationStream?.cancel();
+    _locationStream = _locationService.getLocationStream().listen(
+      (location) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No se pudo acceder a la ubicación'),
-            ),
+          setState(() => _currentLocation = location);
+          // Actualizar la posición del mapa
+          _mapController.move(
+            LatLng(location.latitude!, location.longitude!),
+            _mapController.camera.zoom,
           );
         }
-      }
-    }
+      },
+      onError: (error) {
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return SizedBox(
-        height: widget.height,
-        child: const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    return Stack(
-      children: [
-        _buildMap(),
-        Positioned(
-          right: 16,
-          bottom: 96, // Ajusta esta posición según necesites
-          child: LocationButton(
-            onPressed: _toggleLocationTracking,
-            isTracking: _isTracking,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMap() {
-    if (_useGoogleMaps == true) {
-      return SizedBox(
-        height: widget.height,
-        child: google_maps.GoogleMap(
-          initialCameraPosition: google_maps.CameraPosition(
-            target: _getGoogleLatLng(),
-            zoom: 15,
-          ),
-          onMapCreated: (controller) {
-            _googleMapController = controller;
-            widget.onMapCreated?.call(controller);
-          },
-          myLocationEnabled: widget.myLocationEnabled,
-          myLocationButtonEnabled: false, // Desactivamos el botón por defecto
-          mapToolbarEnabled: false,
-          zoomControlsEnabled: false,
-        ),
-      );
-    }
-
     return SizedBox(
       height: widget.height,
-      child: FlutterMap(
-        mapController: _mapController,
-        options: MapOptions(
-          initialCenter: _getLatLng(),
-          initialZoom: 15,
-        ),
+      child: Stack(
         children: [
-          TileLayer(
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.panda.repartidor',
-          ),
-          if (_currentPosition != null)
-            MarkerLayer(
-              markers: [
-                Marker(
-                  width: 80,
-                  height: 80,
-                  point: _getLatLng(),
-                  child: const Icon(
-                    Icons.location_on,
-                    color: Colors.blue,
-                    size: 40,
-                  ),
+          FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: _currentLocation != null
+                  ? LatLng(_currentLocation!.latitude!, _currentLocation!.longitude!)
+                  : const LatLng(19.4326, -99.1332),
+              initialZoom: 15,
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.panda.repartidor',
+              ),
+              if (_currentLocation != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      width: 50,
+                      height: 50,
+                      point: LatLng(
+                        _currentLocation!.latitude!,
+                        _currentLocation!.longitude!,
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryColor.withOpacity(0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.location_on,
+                          color: AppTheme.primaryColor,
+                          size: 30,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+            ],
+          ),
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: FloatingActionButton(
+              heroTag: 'location_button',
+              onPressed: _isLoading ? null : _getLocation,
+              backgroundColor: Colors.white,
+              child: Icon(
+                Icons.my_location,
+                color: _isLoading ? Colors.grey : AppTheme.primaryColor,
+              ),
+            ),
+          ),
+          if (_isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.1),
+              child: const Center(
+                child: CircularProgressIndicator(),
+              ),
             ),
         ],
       ),
     );
   }
 
-  LatLng _getLatLng() {
-    return _currentPosition != null
-        ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
-        : const LatLng(-5.944436, -77.306495);
-  }
-
-  google_maps.LatLng _getGoogleLatLng() {
-    return _currentPosition != null
-        ? google_maps.LatLng(
-            _currentPosition!.latitude,
-            _currentPosition!.longitude,
-          )
-        : const google_maps.LatLng(-5.944436, -77.306495);
-  }
-
   @override
   void dispose() {
-    _positionStreamSubscription?.cancel();
-    _googleMapController?.dispose();
+    _locationStream?.cancel();
     super.dispose();
   }
 }

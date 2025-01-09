@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../utils/app_colors.dart';
 
 class CustomBottomBar extends StatefulWidget {
-  const CustomBottomBar({Key? key}) : super(key: key);
+  const CustomBottomBar({super.key});
 
   @override
   State<CustomBottomBar> createState() => _CustomBottomBarState();
@@ -36,17 +36,17 @@ class _CustomBottomBarState extends State<CustomBottomBar> {
           children: [
             _buildNavItem(
               context: context,
-              icon: Icons.history_rounded,
-              label: 'Historial',
-              routeName: '/historial',
-              isSelected: currentRoute == '/historial',
+              icon: Icons.home,
+              label: 'Home',
+              routeName: '/Home',
+              isSelected: currentRoute == '/Home',
             ),
             _buildNavItem(
               context: context,
               icon: Icons.account_balance_wallet_rounded,
               label: 'Ganancias',
-              routeName: '/ganancias',
-              isSelected: currentRoute == '/ganancias',
+              routeName: '/order',
+              isSelected: currentRoute == '/order',
             ),
             _buildNavItem(
               context: context,
